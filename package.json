@@ -1,0 +1,13 @@
+{
+  "name": "dashboard-telemetrica-ai-hardware",
+  "version": "1.0.0",
+  "description": "Dashboard telemetrica per monitoraggio hardware AI (GPU NVIDIA, ventole, sistema)",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["dashboard", "telemetry", "nvidia", "hardware", "monitoring"],
+  "author": "rust",
+  "license": "ISC"
+}

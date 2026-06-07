@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Telemetrica AI-Hardware</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0d1117;
+      color: #c9d1d9;
+      min-height: 100vh;
+    }
+    .header {
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .header h1 { font-size: 1.3rem; color: #58a6ff; }
+    .header .status { font-size: 0.85rem; color: #8b949e; }
+    .header .status .live { color: #3fb950; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; margin-bottom: 20px; }
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .card h2 {
+      font-size: 1rem;
+      color: #58a6ff;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #21262d;
+    }
+    .gpu-row {
+      background: #0d1117;
+      border: 1px solid #21262d;
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+    .gpu-row h3 { font-size: 0.95rem; color: #f0f6fc; margin-bottom: 8px; }
+    .metric { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 0.85rem; }
+    .metric .label { color: #8b949e; }
+    .metric .value { color: #c9d1d9; font-weight: 600; }
+    .bar-container {
+      background: #21262d;
+      border-radius: 4px;
+      height: 8px;
+      margin-top: 4px;
+      overflow: hidden;
+    }
+    .bar {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.5s ease;
+    }
+    .bar.green { background: #3fb950; }
+    .bar.yellow { background: #d29922; }
+    .bar.red { background: #f85149; }
+    .alert-banner {
+      background: #3d1f1f;
+      border: 1px solid #f85149;
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      display: none;
+    }
+    .alert-banner.visible { display: block; }
+    .alert-banner h3 { color: #f85149; font-size: 0.95rem; margin-bottom: 6px; }
+    .alert-banner p { font-size: 0.85rem; color: #c9d1d9; }
+    .journal { max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 0.8rem; }
+    .journal div { padding: 2px 0; border-bottom: 1px solid #21262d; }
+    .refresh-btn {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+    .refresh-btn:hover { background: #30363d; }
+    .services-list { max-height: 200px; overflow-y: auto; font-size: 0.8rem; }
+    .services-list div { padding: 3px 0; border-bottom: 1px solid #21262d; }
+    .services-list .running { color: #3fb950; }
+    .services-list .name { color: #c9d1d9; }
+    .services-list .desc { color: #8b949e; }
+    .full-width { grid-column: 1 / -1; }
+    .timestamp { font-size: 0.75rem; color: #484f58; text-align: right; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Dashboard Telemetrica AI-Hardware</h1>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span class="status">Aggiornamento: <span class="live" id="lastUpdate">--</span></span>
+      <button class="refresh-btn" onclick="refreshData()">Ricarica</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <div id="alertBanner" class="alert-banner">
+      <h3>⚠️ Alert Attivi</h3>
+      <div id="alertList"></div>
+    </div>
+
+    <div class="grid">
+      <!-- GPU NVIDIA -->
+      <div class="card">
+        <h2>NVIDIA GPU</h2>
+        <div id="gpuContainer"></div>
+      </div>
+
+      <!-- Sistema -->
+      <div class="card">
+        <h2>Sistema</h2>
+        <div id="systemContainer"></div>
+      </div>
+
+      <!-- Ventole -->
+      <div class="card">
+        <h2>Ventole</h2>
+        <div id="fanContainer"></div>
+      </div>
+
+      <!-- Servizi -->
+      <div class="card">
+        <h2>Servizi Attivi</h2>
+        <div class="services-list" id="servicesContainer"></div>
+      </div>
+
+      <!-- Journal -->
+      <div class="card full-width">
+        <h2>Journal (ultimi 50)</h2>
+        <div class="journal" id="journalContainer"></div>
+      </div>
+    </div>
+
+    <div class="timestamp" id="footerTimestamp"></div>
+  </div>
+
+  <script>
+    const API = '/api';
+
+    function tempColor(t) {
+      if (t < 60) return 'green';
+      if (t < 75) return 'yellow';
+      return 'red';
+    }
+
+    function memColor(pct) {
+      if (pct < 70) return 'green';
+      if (pct < 85) return 'yellow';
+      return 'red';
+    }
+
+    function loadPctColor(pct) {
+      if (pct < 60) return 'green';
+      if (pct < 80) return 'yellow';
+      return 'red';
+    }
+
+    function renderBar(value, max, color) {
+      const pct = Math.min((value / max) * 100, 100);
+      return `<div class="bar-container"><div class="bar ${color}" style="width:${pct}%"></div></div>`;
+    }
+
+    function renderGPUs(data) {
+      const container = document.getElementById('gpuContainer');
+      if (!data || !data.gpus) { container.innerHTML = '<p>Nessun dato</p>'; return; }
+
+      container.innerHTML = data.gpus.map(gpu => `
+        <div class="gpu-row">
+          <h3>${gpu.name}</h3>
+          <div class="metric"><span class="label">Temperatura</span><span class="value">${gpu.temperature}°C</span></div>
+          ${renderBar(gpu.temperature, 100, tempColor(gpu.temperature))}
+          <div class="metric"><span class="label">VRAM</span><span class="value">${gpu.memory.used}/${gpu.memory.total} MiB (${gpu.memory.usedPct}%)</span></div>
+          ${renderBar(gpu.memory.usedPct, 100, memColor(gpu.memory.usedPct))}
+          <div class="metric"><span class="label">Utilizzo GPU</span><span class="value">${gpu.utilization.gpu}%</span></div>
+          ${renderBar(gpu.utilization.gpu, 100, gpu.utilization.gpu > 50 ? 'yellow' : 'green')}
+          <div class="metric"><span class="label">Utilizzo Memoria</span><span class="value">${gpu.utilization.memory}%</span></div>
+          ${renderBar(gpu.utilization.memory, 100, gpu.utilization.memory > 50 ? 'yellow' : 'green')}
+          <div class="metric"><span class="label">Potenza</span><span class="value">${gpu.power.draw.toFixed(1)} / ${gpu.power.limit} W</span></div>
+        </div>
+      `).join('');
+    }
+
+    function renderSystem(data) {
+      const container = document.getElementById('systemContainer');
+      if (!data) { container.innerHTML = '<p>Nessun dato</p>'; return; }
+
+      container.innerHTML = `
+        <div class="metric"><span class="label">CPU</span><span class="value">${data.cpu.model}</span></div>
+        <div class="metric"><span class="label">Core</span><span class="value">${data.cpu.cores}</span></div>
+        <div class="metric"><span class="label">Carico (1m)</span><span class="value">${data.cpu.load.load1} (${data.cpu.load.loadPct}%)</span></div>
+        ${renderBar(data.cpu.load.loadPct, 100, loadPctColor(data.cpu.load.loadPct))}
+        <div class="metric"><span class="label">Memoria</span><span class="value">${data.memory.used}/${data.memory.total} MB (${data.memory.usedPct}%)</span></div>
+        ${renderBar(data.memory.usedPct, 100, data.memory.usedPct > 80 ? 'red' : data.memory.usedPct > 60 ? 'yellow' : 'green')}
+        <div class="metric"><span class="label">Disponibile</span><span class="value">${data.memory.available} MB</span></div>
+        <div class="metric"><span class="label">Disk /</span><span class="value">${data.disk.usedPct}% (${data.disk.used}/${data.disk.size})</span></div>
+        ${renderBar(data.disk.usedPct, 100, data.disk.usedPct > 80 ? 'red' : data.disk.usedPct > 60 ? 'yellow' : 'green')}
+        <div class="metric"><span class="label">Uptime</span><span class="value">${data.uptime.uptime.days}g ${data.uptime.uptime.hours}h ${data.uptime.uptime.minutes}m</span></div>
+      `;
+    }
+
+    function renderFans(data) {
+      const container = document.getElementById('fanContainer');
+      if (!data || !data.hwmons) { container.innerHTML = '<p>Nessun dato</p>'; return; }
+
+      let html = '';
+      data.hwmons.forEach(hw => {
+        html += `<div class="gpu-row"><h3>${hw.name}</h3>`;
+        Object.entries(hw.fans).forEach(([name, fan]) => {
+          html += `<div class="metric"><span class="label">${name}</span><span class="value">${fan.rpm} RPM</span></div>`;
+        });
+        html += '</div>';
+      });
+      container.innerHTML = html || '<p>Nessuna ventola rilevata</p>';
+    }
+
+    function renderServices(services) {
+      const container = document.getElementById('servicesContainer');
+      if (!services || services.length === 0) { container.innerHTML = '<p>Nessun servizio</p>'; return; }
+
+      container.innerHTML = services.slice(0, 30).map(s => `
+        <div>
+          <span class="running">●</span>
+          <span class="name">${s.name}</span>
+          <span class="desc">${s.description}</span>
+        </div>
+      `).join('');
+    }
+
+    function renderJournal(lines) {
+      const container = document.getElementById('journalContainer');
+      if (!lines || lines.length === 0) { container.innerHTML = '<p>Nessun dato</p>'; return; }
+      container.innerHTML = lines.map(l => `<div>${l}</div>`).join('');
+    }
+
+    function renderAlerts(alerts) {
+      const banner = document.getElementById('alertBanner');
+      const list = document.getElementById('alertList');
+      if (!alerts || alerts.length === 0) {
+        banner.classList.remove('visible');
+        return;
+      }
+      banner.classList.add('visible');
+      list.innerHTML = alerts.map(a => `<p>${a.message}</p>`).join('<br>');
+    }
+
+    async function refreshData() {
+      try {
+        const [nvidia, system, fans, services, journal, alerts] = await Promise.all([
+          fetch(`${API}/nvidia`).then(r => r.json()),
+          fetch(`${API}/system`).then(r => r.json()),
+          fetch(`${API}/fans`).then(r => r.json()),
+          fetch(`${API}/services`).then(r => r.json()),
+          fetch(`${API}/journal?n=50`).then(r => r.json()),
+          fetch(`${API}/alerts`).then(r => r.json())
+        ]);
+
+        renderGPUs(nvidia);
+        renderSystem(system);
+        renderFans(fans);
+        renderServices(services?.services || []);
+        renderJournal(journal?.lines || []);
+        renderAlerts(alerts?.alerts || []);
+
+        const now = new Date().toLocaleTimeString('it-IT');
+        document.getElementById('lastUpdate').textContent = now;
+        document.getElementById('footerTimestamp').textContent = `Ultimo aggiornamento: ${now}`;
+      } catch (err) {
+        console.error('Errore aggiornamento:', err);
+      }
+    }
+
+    // Avvio
+    refreshData();
+    setInterval(refreshData, 10000);
+  </script>
+</body>
+</html>

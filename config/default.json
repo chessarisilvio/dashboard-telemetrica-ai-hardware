@@ -1,0 +1,21 @@
+{
+  "server": {
+    "port": 9200,
+    "host": "0.0.0.0"
+  },
+  "polling": {
+    "intervalMs": 10000,
+    "journalLines": 50
+  },
+  "alerts": {
+    "vramThresholdPct": 85,
+    "p40TempThresholdC": 75,
+    "cpuLoadThresholdPct": 90,
+    "telegramEnabled": true,
+    "telegramToken": "",
+    "telegramChatId": ""
+  },
+  "nvidia": {
+    "nvidiaSmiPath": "/usr/bin/nvidia-smi"
+  }
+}
